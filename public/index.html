@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dummy EC - WebAuthn Store</title>
+    <!-- SimpleWebAuthn Browser Helper (CDN) -->
+     <script src="https://unpkg.com/@simplewebauthn/browser/dist/bundle/index.umd.min.js"></script>
+     <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>🛒 Mini WebAuthn EC Store</h1>
+
+    <div class="card">
+        <h3>👤 Account & Pass-kay Management</h3>
+        <label for="username">Your username (email-address or nickname)</label>
+        <input type="text" id="username" placeholder="e.g., John Smith">
+
+        <div>
+            <button id="btn-register">1. New passkay Registration</button>
+            <button id="btn-login" class="secondary">2. Login with passkay</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>🛍 Cart checkout (An demonstration of Set-up authentication)</h3>
+        <p>Items: <strong>Mechanical keyboard ($98.80)</strong></p>
+        <button id="btn-checkout" style="background: #16a34a;">Confirm Purchese (Re-authentication)</button>
+    </div>
+
+    <h3>Execution Log</h3>
+    <div id="log">The log will be displayed here.</div>
+    <script>
+        const { startRegistration, startAuthentication } = SimpleWebAuthnBrowser;
+        const logEl = document.getElementById('log');
+
+        function log(msg) {
+            logEl.textContent = typeof msg === 'object' ? JSON.stringify(msg, null, 2) : msg;
+        }
+
+        // 1. New passkey Registration
+        document.getElementById('btn-register').addEventListener('click', async () => {
+            const username = document.getElementById('username').value.trim();
+            if (!username) return alert('You are required to enter your username in the form.');
+
+            try {
+                log('Retrieving options of authentication...');
+                const respOptions = await fetch('/api/register/options', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username }),
+                });
+                const options = await respOptions.json();
+                if (options.error) throw new Error(options.error);
+
+                log('Calling the authenticator (Touch ID / Hello / YubiKey)...');
+                // It executes navigator.credentials.create() internally
+                const registrationResp = await startRegistration({ optionsJSON: options });
+
+                log('Sending and verification the pub-key of your authenticator on the server.')
+                const verifyResp = await fetch('/api/register/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, response: registrationResp }),
+                });
+                const verifyResult = await verifyResp.json();
+
+                log(verifyResult);
+            } catch (error) {
+                log(`[Error] ${error.message}`);
+            }
+        });
+
+        // 2. Login with passkey
+        document.getElementById('btn-login').addEventListener('click', async () => {
+            const username = document.getElementById('username').value.trim();
+            if (!username) return alert('Please enter your username.')
+
+            try {
+                log('Retrieving the challenge code from server...');
+                const respOptions = await fetch('/api/login/options', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username }),
+                });
+                const options = await respOptions.json();
+                if (options.error) throw new Error(options.error);
+
+                log('Requesting Bio-auth / signature ...');
+                // It executes navigator.credentials.get() internally
+                const authResp = await startAuthentication({ optionsJSON: options });
+
+                log('Verifying the signature on server.')
+                const verifyResp = await fetch('/api/login/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, response: authResp }),
+                });
+                const verifyResult = await verifyResp.json();
+
+                log(verifyResult);
+            } catch (error) {
+                log(`[Error] ${error.message}`);
+            }
+        });
+
+        // 3. Cart checking out
+        document.getElementById('btn-checkout').addEventListener('click', async () => {
+            document.getElementById('btn-login').click();
+        });
+    </script>
+</body>
+</html>
